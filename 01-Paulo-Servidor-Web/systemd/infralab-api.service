@@ -1,0 +1,13 @@
+[Unit]
+Description=InfraLab FastAPI Web Application Service
+After=network.target
+
+[Service]
+Type=simple
+User=infralab
+WorkingDirectory=/opt/infralab/01-Paulo-Servidor-Web/fastapi
+ExecStart=/opt/infralab/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
