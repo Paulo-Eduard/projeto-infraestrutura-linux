@@ -1,0 +1,10 @@
+Disk quotas for user usr_web (uid 1001): 
+     Filesystem   space   quota   limit   grace   files   quota   limit   grace
+      /dev/sda2      0K  100000K    118M               0       0       0        
+Disk quotas for user usr_dados (uid 1002): 
+     Filesystem   space   quota   limit   grace   files   quota   limit   grace
+      /dev/sda2      0K  100000K    118M               0       0       0        
+Disk quotas for user usr_admin (uid 1003): 
+     Filesystem   space   quota   limit   grace   files   quota   limit   grace
+      /dev/sda2      0K  100000K    118M               0       0       0        
+/dev/disk/by-uuid/bda3d354-926c-467d-b6c0-55ed6fe3e922 / ext4 defaults,usrquota,grpquota 0 1

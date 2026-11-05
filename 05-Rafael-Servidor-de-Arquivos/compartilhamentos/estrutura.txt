@@ -1,0 +1,4 @@
+drwxrws--- 2 root gpr_admin 4096 Nov  5 12:51 /srv/backups
+drwxrws--- 2 root gpr_dados 4096 Nov  5 12:51 /srv/samba/dados
+drwxrws--- 2 root gpr_todos 4096 Nov  5 12:51 /srv/samba/publica
+drwxrws--- 2 root gpr_web   4096 Nov  5 20:51 /srv/samba/web
