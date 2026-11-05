@@ -1,3 +1,0 @@
-uid=1001(usr_web) gid=1005(usr_web) groups=1005(usr_web),1001(gpr_todos),1002(gpr_web)
-uid=1002(usr_dados) gid=1006(usr_dados) groups=1006(usr_dados),1001(gpr_todos),1003(gpr_dados)
-uid=1003(usr_adim) gid=1007(usr_adim) groups=1007(usr_adim),1001(gpr_todos),1002(gpr_web),1003(gpr_dados),1004(gpr_admin)
