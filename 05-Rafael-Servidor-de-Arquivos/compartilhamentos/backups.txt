@@ -1,2 +1,3 @@
-total 4.0K
+total 8.0K
 -rw-r----- 1 root gpr_admin 264 Nov  5 21:05 samba_2026-11-05_21-05.tar.gz
+-rw-r----- 1 root gpr_admin 261 Nov  5 21:36 samba_2026-11-05_21-36.tar.gz

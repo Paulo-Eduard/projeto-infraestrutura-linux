@@ -1,1 +1,2 @@
 0 2 * * * /usr/local/bin/backup-samba.sh
+0 2 * * * /usr/local/bin/backup-samba.sh
