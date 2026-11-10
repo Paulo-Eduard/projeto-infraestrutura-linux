@@ -9,7 +9,7 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
-if ! systemctl is-active --quiet; then
+if ! systemctl is-active --quiet postgresql; then
   systemctl start postgresql
 fi
 

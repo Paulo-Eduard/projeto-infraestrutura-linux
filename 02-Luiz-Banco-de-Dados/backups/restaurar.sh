@@ -41,6 +41,7 @@ fi
 
 runuser -u postgres -- pg_restore \
   --clean --if-exists --no-owner \
+  --role=infralab_user \
   --dbname="$DB_NAME" "$BACKUP_FILE"
 
 echo "Restauração concluída no banco ${DB_NAME}."
