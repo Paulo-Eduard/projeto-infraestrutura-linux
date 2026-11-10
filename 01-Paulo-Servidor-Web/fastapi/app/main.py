@@ -8,9 +8,19 @@ from app.database import engine, Base
 from app.routes.health import router as health_router
 from app.routes.items import router as items_router
 import time
+import logging
 
-# Criação das tabelas no banco de dados
-Base.metadata.create_all(bind=engine)
+# Logger do uvicorn: aparece no journalctl mesmo sem configuração extra de logging
+logger = logging.getLogger('uvicorn.error')
+logger.info('Banco de dados em uso: %s', engine.url.render_as_string(hide_password=True))
+
+# Criação das tabelas no banco de dados.
+# Se o banco estiver indisponível, a API sobe mesmo assim e /health/ready
+# reporta 503, em vez de entrar em loop de crash no systemd.
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as exc:
+    logger.error('Falha ao criar/verificar tabelas no banco: %s', exc)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -23,10 +33,12 @@ app = FastAPI(
 
 # Configuração de CORS
 origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(',') if origin.strip()]
+if not origins:
+    origins = ['*']
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ['*'],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials='*' not in origins,  # CORS não permite credenciais com origem "*"
     allow_methods=['*'],
     allow_headers=['*'],
 )

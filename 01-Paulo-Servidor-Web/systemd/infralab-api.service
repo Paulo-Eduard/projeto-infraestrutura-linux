@@ -1,13 +1,22 @@
 [Unit]
 Description=InfraLab FastAPI Web Application Service
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=infralab
 WorkingDirectory=/opt/infralab/01-Paulo-Servidor-Web/fastapi
+
+# Carrega DATABASE_URL e demais variaveis do .env.
+# Sem o prefixo "-" de proposito: se o arquivo nao existir, o servico falha
+# de forma explicita em vez de cair silenciosamente num SQLite de desenvolvimento.
+EnvironmentFile=/opt/infralab/01-Paulo-Servidor-Web/fastapi/.env
+Environment=PYTHONUNBUFFERED=1
+
 ExecStart=/opt/infralab/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

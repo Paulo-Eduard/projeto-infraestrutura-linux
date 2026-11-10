@@ -34,7 +34,7 @@ def list_items(
         query = query.filter(Item.title.ilike(f'%{search}%'))
     
     total = query.count()
-    items = query.offset(skip).limit(limit).all()
+    items = query.order_by(Item.id).offset(skip).limit(limit).all()
     page = (skip // limit) + 1 if limit > 0 else 1
     return PaginatedItemResponse(total=total, page=page, size=limit, items=items)
 

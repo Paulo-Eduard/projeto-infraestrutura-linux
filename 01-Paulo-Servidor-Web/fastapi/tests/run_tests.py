@@ -5,6 +5,10 @@ import os
 # Adiciona o diretório fastapi ao sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Isola os testes: sempre SQLite em memória, ignorando DATABASE_URL/.env reais.
+# Deve ser definido ANTES de importar app.*
+os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

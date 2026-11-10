@@ -14,8 +14,8 @@ Este repositório contém a implementação completa do componente **Servidor We
 - **Framework Backend**: FastAPI (Uvicorn na Porta 8000)
 - **ORM & Banco de Dados**: SQLAlchemy (PostgreSQL / SQLite Dev)
 - **Validação de Dados**: Pydantic v2
-- **Gerenciador de Serviços**: Systemd ()
-- **Automação**: Linux Shell Script ()
+- **Gerenciador de Serviços**: Systemd (`infralab-api.service`)
+- **Automação**: Linux Shell Script (`scripts/*.sh`)
 - **Testes Automatizados**: Unittest / TestClient
 
 ---
@@ -26,7 +26,7 @@ Este repositório contém a implementação completa do componente **Servidor We
 ├── README.md
 ├── fastapi/
 │   ├── requirements.txt
-│   ├── env.example
+│   ├── .env.example
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py
@@ -65,10 +65,18 @@ Este repositório contém a implementação completa do componente **Servidor We
 ### 1. Instalação Automática (Linux Ubuntu/Debian)
 bash scripts/install.sh
 
-### 2. Execução dos Testes Automatizados
+### 2. Configuração do banco (.env)
+Edite `/opt/infralab/01-Paulo-Servidor-Web/fastapi/.env` e defina:
+
+    DATABASE_URL=postgresql+psycopg2://infralab_user:SENHA@192.168.30.10:5432/infralab_db
+
+Senhas com `@`, `#` ou `!` devem ser codificadas na URL (ex.: `@` vira `%40`).
+Detalhes em `configuracoes/variaveis-ambiente.md`.
+
+### 3. Execução dos Testes Automatizados
 PYTHONPATH=fastapi python3 fastapi/tests/run_tests.py
 
-### 3. Gerenciamento de Serviços
+### 4. Gerenciamento de Serviços
 bash scripts/start.sh
 bash scripts/status.sh
 bash scripts/healthcheck.sh

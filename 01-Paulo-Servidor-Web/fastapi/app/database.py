@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 connect_args = {}
 if settings.DATABASE_URL.startswith('sqlite'):
     connect_args['check_same_thread'] = False
+elif settings.DATABASE_URL.startswith('postgresql'):
+    # Sem isso, um banco inalcancavel (firewall/DROP) deixa a requisicao
+    # pendurada por minutos, e o Nginx responde 504 em /health/ready.
+    connect_args['connect_timeout'] = 5
 
 engine = create_engine(
     settings.DATABASE_URL,

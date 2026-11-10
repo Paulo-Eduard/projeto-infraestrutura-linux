@@ -42,7 +42,7 @@ let allItems = [];
 async function loadItems() {
     const tableBody = document.getElementById('items-table-body');
     try {
-        const res = await fetch(API_BASE);
+        const res = await fetch(`${API_BASE}?limit=100`);
         if (res.ok) {
             const data = await res.json();
             allItems = data.items || [];

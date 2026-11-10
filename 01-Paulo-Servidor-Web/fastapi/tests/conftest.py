@@ -1,3 +1,8 @@
+import os
+# Isola os testes: sempre SQLite em memória, ignorando DATABASE_URL/.env reais.
+# Deve ser definido ANTES de importar app.*
+os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
