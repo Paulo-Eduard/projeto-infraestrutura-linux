@@ -114,9 +114,6 @@ table inet filter {
 
     iifname $DB oifname $LAN ip saddr $DB_SRV ip daddr $FILE_SRV tcp dport { 139, 445 } accept
 
-    # TEMPORARIO: atualizacoes (remover antes da apresentacao)
-    iifname { $DMZ, $DB } oifname $WAN tcp dport { 80, 443 } accept
-
     log prefix "FW-DROP: " limit rate 5/minute
   }
 
