@@ -41,11 +41,13 @@ O DHCP do VMware deve ficar **desligado** nas VMnet2, VMnet3 e VMnet4.
 
 ## Regras do firewall
 
-- A LAN acessa a internet e o servidor Web somente nas portas 80 e 443.
+- A LAN acessa a internet somente nas portas 80 e 443.
+- A LAN acessa o servidor Web somente nas portas 80 e 443.
 - Somente o servidor Web (DMZ) acessa o PostgreSQL, na porta 5432.
 - A LAN não acessa o banco de dados diretamente.
 - A DMZ não acessa a LAN.
 - O banco acessa o servidor de arquivos (Samba), portas 139 e 445, para enviar backups.
+- A DMZ e a DB Zone não têm acesso à internet.
 - Política padrão: tudo que não foi liberado é bloqueado.
 
 ## Arquivos desta pasta
@@ -57,6 +59,7 @@ O DHCP do VMware deve ficar **desligado** nas VMnet2, VMnet3 e VMnet4.
 | `rede/dhcp.conf` | Servidor DHCP | `/etc/dnsmasq.d/dhcp.conf` |
 | `roteamento/99-forward.conf` | Ativa o roteamento IPv4 | `/etc/sysctl.d/99-forward.conf` |
 | `firewall/nftables.conf` | Regras do firewall e NAT | `/etc/nftables.conf` |
+| `scripts/setup-router.sh` | Monta todo o roteador automaticamente | (executar com `sudo bash`) |
 
 ## Como aplicar
 
@@ -90,19 +93,21 @@ sudo nft -c -f /etc/nftables.conf
 sudo systemctl enable --now nftables
 ```
 
+**Alternativa:** rodar tudo de uma vez com o script `scripts/setup-router.sh`:
+```
+sudo bash setup-router.sh
+```
+
 ## Testes
 
 | Teste | Comando | Esperado |
 |---|---|---|
 | Internet no roteador | `ping -c 3 8.8.8.8` | Responde |
-| DNS | `nslookup web.projeto.local 192.168.20.1` | 192.168.10.10 |
+| DNS | `nslookup -type=A web.projeto.local 192.168.20.1` | 192.168.10.10 |
 | Firewall ativo na inicialização | `sudo systemctl is-enabled nftables` | enabled |
 | LAN para Web | `curl http://192.168.10.10` | Libera |
 | LAN para Banco | `nc -zv 192.168.30.10 5432` | Bloqueia |
 | Web para Banco | `nc -zv 192.168.30.10 5432` (na VM web) | Libera |
 | DMZ para LAN | `ping 192.168.20.10` (na VM web) | Bloqueia |
 | Banco para Samba | `nc -zv 192.168.20.10 445` (na VM do banco) | Libera |
-
-## Observação
-
-O `nftables.conf` contém uma regra temporária que libera as portas 80 e 443 da DMZ e da DB Zone para a internet, usada para instalar pacotes durante o desenvolvimento. Ela deve ser removida antes da apresentação final, para manter o banco isolado.
+| Banco sem internet | `curl -m 5 http://example.com` (na VM do banco) | Bloqueia |
