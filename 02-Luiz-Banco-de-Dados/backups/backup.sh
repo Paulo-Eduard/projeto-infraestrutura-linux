@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -130,4 +129,3 @@ echo "BACKUP CONCLUÍDO!"
 echo "=========================================="
 echo "Arquivo local: ${BACKUP_FILE}"
 echo "Destino Samba: //${SAMBA_SERVER}/${SAMBA_SHARE}"
-```
