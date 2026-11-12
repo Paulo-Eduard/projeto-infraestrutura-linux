@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -277,4 +276,3 @@ fi
 
 echo
 echo "Próximo passo: sudo bash scripts/configurar-banco.sh"
-```
