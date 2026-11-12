@@ -1,4 +1,4 @@
-gpr_todos:x:1001:usr_web,usr_dados,usr_adim
-gpr_web:x:1002:usr_web,usr_adim
-gpr_dados:x:1003:usr_dados,usr_adim
-gpr_admin:x:1004:usr_adim
+gpr_todos:x:1001:usr_web,usr_dados,usr_admin
+gpr_web:x:1002:usr_web,usr_admin
+gpr_dados:x:1003:usr_dados,usr_admin
+gpr_admin:x:1004:usr_admin
