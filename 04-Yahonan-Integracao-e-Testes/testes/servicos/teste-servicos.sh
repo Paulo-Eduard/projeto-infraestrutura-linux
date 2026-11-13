@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# teste-servicos.sh
-# Verifica servicos, portas, integracao Web-Banco, backups e o fluxo completo (CRUD).
+# teste-seguranca.sh
+# Verifica exposicao de portas, configuracoes seguras e regras que ainda precisam de decisao.
 #
-# Uso:  sudo bash teste-servicos.sh [cliente|web|banco|samba|roteador]
+# Uso:  sudo bash teste-seguranca.sh [cliente|web|banco|samba|roteador]
 #       (sem argumento, o papel e detectado pelo IP da VM)
 # Modo: MODO=final (padrao, estado de entrega) ou MODO=dev (durante a instalacao)
 # Saida: [PASS]/[FAIL]/[AVISO]/[INFO] + log em ./resultados/. Codigo de saida != 0 se houver FAIL.
@@ -104,172 +104,146 @@ executar() {
   exit "$rc"
 }
 
-NOME_TESTE=servicos
+NOME_TESTE=seguranca
 PAPEL=${1:-$(meu_papel)}
-API_UNIT=${API_UNIT:-infralab-api}
 BKP_DB_DIR=${BKP_DB_DIR:-/var/backups/infralab/postgresql}
-BKP_SMB_DIR=${BKP_SMB_DIR:-/srv/backups}
+API_UNIT=${API_UNIT:-infralab-api}
+PORTAS_COMUNS="21 22 23 25 53 80 110 139 443 445 3306 3389 5432 8000 8080 8443"
 
-http_code() { curl -s -o /dev/null -m 5 -w '%{http_code}' "$@" 2>/dev/null; }
-checa_http() { # <descrição> <esperado> <url> [args do curl]
-  local d=$1 esp=$2; shift 2
-  local c; c=$(http_code "$@")
-  if [ "$c" = "$esp" ]; then pass "$d (HTTP $c)"; else fail "$d (HTTP ${c:-000}; esperado $esp)"; fi
-}
 psql_pg() { runuser -u postgres -- psql -d "${2:-postgres}" -tAc "$1" 2>/dev/null; }
-env_da_api() { # caminho do EnvironmentFile da unit (vazio se não houver)
-  systemctl show "$API_UNIT" -p EnvironmentFiles --value 2>/dev/null | awk '{print $1}' | sed 's/^-//'
+
+# varredura <ip> -> imprime as portas comuns que NÃO estão filtradas (em paralelo)
+varredura() {
+  local ip=$1 tmp p; tmp=$(mktemp -d)
+  for p in $PORTAS_COMUNS; do
+    ( [ "$(TIMEOUT=1 tcp_estado "$ip" "$p")" != FILTRADA ] && echo "$p" > "$tmp/$p" ) &
+  done
+  wait
+  ls "$tmp" 2>/dev/null | sort -n | tr '\n' ' '
+  rm -rf "$tmp"
+}
+
+ssh_basico() {
+  secao "SSH desta VM"
+  if command -v sshd >/dev/null 2>&1; then
+    local r; r=$(sshd -T 2>/dev/null | awk '/^permitrootlogin/ {print $2}')
+    case "$r" in
+      no|prohibit-password|without-password) pass "Login SSH direto como root restrito ($r)";;
+      yes) fail "PermitRootLogin yes";;
+      *)   info "Nao foi possivel ler a configuracao do sshd (rode com sudo)";;
+    esac
+  else info "sshd nao instalado nesta VM"; fi
 }
 
 principal() {
-  echo "Teste de SERVICOS - papel: ${PAPEL:-?}  ($(date '+%F %T'))"
+  echo "Teste de SEGURANCA - papel: ${PAPEL:-?}  modo: $MODO  ($(date '+%F %T'))"
   case "$PAPEL" in
 
   cliente)
-    secao "Fluxo completo visto pelo usuario: LAN -> Nginx -> API -> Banco"
-    local base="http://$WEB"
-    checa_http "Pagina inicial da API"        200 "$base/"
-    checa_http "/health"                      200 "$base/health"
-    checa_http "/health/ready (API enxerga o banco)" 200 "$base/health/ready"
-    if curl -s -m 5 "$base/health/ready" | grep -q 'connected'; then pass "/health/ready informa database=connected"
-    else fail "/health/ready nao informa database=connected"; fi
-    checa_http "Listagem /api/v1/items"       200 "$base/api/v1/items"
-    local c; c=$(http_code "$base/app/")
-    if [ "$c" = 200 ]; then pass "Frontend /app/ (HTTP 200)"; else warn "Frontend /app/ retornou HTTP ${c:-000} (confirmar com o Paulo)"; fi
-
-    secao "CRUD completo (grava e le no PostgreSQL)"
-    local titulo="teste-integracao-$(date +%s)" resp id
-    resp=$(curl -s -m 8 -X POST "$base/api/v1/items" -H 'Content-Type: application/json' \
-           -d "{\"title\":\"$titulo\",\"price\":9.9}" -w '\n%{http_code}')
-    if [ "$(tail -n1 <<<"$resp")" = 201 ]; then pass "POST criou o item (HTTP 201)"; else fail "POST (HTTP $(tail -n1 <<<"$resp"))"; fi
-    id=$(head -n1 <<<"$resp" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-    if [ -n "$id" ]; then
-      checa_http "GET do item $id"            200 "$base/api/v1/items/$id"
-      checa_http "PUT do item $id"            200 -X PUT "$base/api/v1/items/$id" -H 'Content-Type: application/json' -d '{"price":12.5}'
-      checa_http "DELETE do item $id"         204 -X DELETE "$base/api/v1/items/$id"
-      checa_http "GET apos DELETE (some)"     404 "$base/api/v1/items/$id"
-    else
-      fail "Nao foi possivel obter o id do item criado; CRUD interrompido"
-    fi
-    secao "Samba (visto pelo cliente)"
-    if command -v smbclient >/dev/null; then
-      info "Teste manual de autenticacao: smbclient -L //$FILES -U usr_dados"
-      info "Esperado: lista web, dados, publica, backups conforme o grupo do usuario."
-    else
-      info "smbclient nao instalado (sudo apt install smbclient) - teste do Samba pendente"
-    fi
+    secao "Exposicao vista da LAN (portas comuns nao filtradas)"
+    local ab
+    ab=$(varredura "$WEB"); ab=${ab% }
+    info "Web ($WEB): portas alcancaveis = ${ab:-nenhuma}"
+    if [ -z "$(tr ' ' '\n' <<<"$ab" | grep -vxE '80|443|')" ]; then pass "Web expoe apenas 80/443 para a LAN"
+    else fail "Web expoe portas alem de 80/443: $ab"; fi
+    ab=$(varredura "$DB"); ab=${ab% }
+    info "Banco ($DB): portas alcancaveis = ${ab:-nenhuma}"
+    [ -z "$ab" ] && pass "Banco totalmente inacessivel a partir da LAN" || fail "Banco expoe portas para a LAN: $ab"
+    ab=$(varredura "$GW_DMZ"); ab=${ab% }
+    info "Roteador pelo lado DMZ ($GW_DMZ), visto da LAN: ${ab:-nenhuma}"
+    secao "Cabecalhos e rotas expostas no Web"
+    local srv; srv=$(curl -sI -m 5 "http://$WEB/" | tr -d '\r' | awk -F': ' 'tolower($1)=="server"{print $2}')
+    if grep -q '/' <<<"$srv"; then warn "Cabecalho Server revela a versao: $srv (server_tokens off)"; else pass "Versao do servidor nao revelada (${srv:-sem cabecalho})"; fi
+    local c
+    c=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$WEB/docs"); [ "$c" = 200 ] && warn "/docs (Swagger) publico via Nginx" || pass "/docs nao publico (HTTP $c)"
+    c=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$WEB/openapi.json"); [ "$c" = 200 ] && warn "/openapi.json publico via Nginx" || pass "/openapi.json nao publico (HTTP $c)"
+    c=$(curl -s -m 5 -X POST "http://$WEB/api/v1/items" -H 'Content-Type: application/json' -d '{"title":"","price":-1}' -o /dev/null -w '%{http_code}')
+    [ "$c" = 422 ] && pass "Entrada invalida rejeitada (HTTP 422)" || warn "Entrada invalida retornou HTTP $c (esperado 422)"
+    info "Faltam (fora do escopo atual): HTTPS no Nginx (so porta 80) e autenticacao na API."
     ;;
 
   web)
     precisa_root
-    secao "Servicos do servidor Web"
-    servico_ativo nginx "Nginx"
-    servico_ativo "$API_UNIT" "API ($API_UNIT)"
-    servico_habilitado nginx
-    servico_habilitado "$API_UNIT"
-    if nginx -t 2>&1 | grep -q 'successful'; then pass "nginx -t: configuracao valida"; else fail "nginx -t acusou erro"; fi
-    secao "Portas"
-    if escuta 80 | grep -q .; then pass "Porta 80 em escuta"; else fail "Porta 80 sem servico"; fi
-    if escuta 8000 | grep -q .; then pass "API em escuta na 8000"; else fail "API nao escuta na 8000"; fi
-    secao "Respostas locais"
-    checa_http "/health (via Nginx)"        200 http://127.0.0.1/health
-    checa_http "/health/ready (via Nginx)"  200 http://127.0.0.1/health/ready
-    secao "A API usa o PostgreSQL de verdade (nao SQLite)?"
-    local envf; envf=$(env_da_api)
-    if [ -n "$envf" ] && [ -r "$envf" ]; then
-      local url; url=$(grep -E '^DATABASE_URL=' "$envf" | head -1 | cut -d= -f2-)
-      case "$url" in
-        postgresql*) pass "DATABASE_URL usa PostgreSQL ($(sed -E 's#(://[^:]+):[^@]*@#\1:***@#' <<<"$url"))";;
-        sqlite*)     fail "DATABASE_URL aponta para SQLite";;
-        *)           fail "DATABASE_URL ausente ou inesperada em $envf";;
-      esac
-      if grep -qE "@(localhost|127\.0\.0\.1)" <<<"$url"; then warn "DATABASE_URL aponta para localhost; a arquitetura pede o IP da DB Zone ($DB)"; fi
-    else
-      fail "A unit $API_UNIT nao tem EnvironmentFile legivel (o .env nunca e carregado) - ver validacao.md, achado W1"
-    fi
-    curl -s -m 5 http://127.0.0.1/health/ready >/dev/null
-    if ss -Htn state established "( dport = :5432 )" 2>/dev/null | grep -q "$DB"; then pass "Conexao TCP estabelecida com $DB:5432"
-    else fail "Nenhuma conexao estabelecida com $DB:5432 (API nao fala com o Postgres da DB Zone)"; fi
+    ssh_basico
+    secao "Superficie da API"
+    local ends; ends=$(escuta 8000)
+    if [ -z "$ends" ]; then fail "Nada escuta na 8000 (API fora do ar)"
+    elif grep -vE '^(127\.0\.0\.1|\[::1\]):' <<<"$ends" | grep -q .; then fail "API escuta fora do loopback ($(tr '\n' ' ' <<<"$ends")); so o Nginx deveria ser publico"
+    else pass "API (8000) escuta apenas em 127.0.0.1"; fi
+    secao "Processo e segredos"
+    local u; u=$(systemctl show "$API_UNIT" -p User --value 2>/dev/null)
+    case "$u" in ""|root) fail "Servico $API_UNIT roda como root (${u:-vazio = root})";; *) pass "Servico $API_UNIT roda como usuario '$u'";; esac
+    local f bad=0
+    while IFS= read -r f; do
+      [ -n "$f" ] && { fail "Arquivo de segredos legivel por todos: $f"; bad=1; }
+    done < <(find /opt/infralab -name '.env' -perm /o+r 2>/dev/null)
+    [ "$bad" = 0 ] && pass "Nenhum .env legivel por 'outros' em /opt/infralab"
+    if grep -rEqi '^DEBUG=(true|1)' /opt/infralab --include=.env 2>/dev/null; then warn "DEBUG ativo no .env (erros 500 revelam detalhes internos)"; else pass "DEBUG nao esta ativo no .env"; fi
     ;;
 
   banco)
     precisa_root
-    secao "Servico PostgreSQL"
-    servico_ativo postgresql "PostgreSQL"
-    servico_habilitado postgresql
-    secao "Rede"
-    local ends; ends=$(escuta 5432)
-    if grep -qE "^($DB|0\.0\.0\.0|\*|\[::\]):" <<<"$ends"; then pass "PostgreSQL escuta em $DB (acessivel pela rede)"
-    else fail "PostgreSQL escuta so em: ${ends:-nada}; o Web (DMZ) nao conseguira conectar (listen_addresses)"; fi
+    ssh_basico
+    secao "Exposicao e autenticacao"
+    local la; la=$(psql_pg "show listen_addresses")
+    if grep -q '\*' <<<"$la"; then fail "listen_addresses='$la' (escuta em todas as interfaces)"; else pass "listen_addresses restrito ($la)"; fi
     local hba; hba=$(psql_pg "show hba_file")
-    if [ -n "$hba" ] && awk -v w="$WEB/32" '$1=="host" && $2=="infralab_db" && $3=="infralab_user" && ($4==w || $4=="192.168.10.0/24")' "$hba" | grep -q .; then
-      pass "pg_hba.conf libera infralab_user a partir do Web ($WEB)"
-    else fail "pg_hba.conf sem regra para infralab_user vindo de $WEB"; fi
-    if ss -Htn state established "( sport = :5432 )" 2>/dev/null | grep -q "$WEB"; then pass "Ha conexao ativa vinda do Web ($WEB)"
-    else warn "Nenhuma conexao ativa do Web agora (faca uma requisicao na API e repita)"; fi
-    secao "Banco, usuario e tabela"
-    [ "$(psql_pg "select 1 from pg_database where datname='infralab_db'")" = 1 ] && pass "Banco infralab_db existe" || fail "Banco infralab_db nao existe"
-    [ "$(psql_pg "select rolsuper from pg_roles where rolname='infralab_user'")" = f ] && pass "infralab_user existe e nao e superusuario" || fail "infralab_user ausente ou superusuario"
-    local dono; dono=$(psql_pg "select tableowner from pg_tables where tablename='items'" infralab_db)
-    if [ "$dono" = infralab_user ]; then pass "Tabela items existe e pertence a infralab_user"
-    elif [ -z "$dono" ]; then warn "Tabela items ainda nao existe (sera criada na 1a subida da API)"
-    else fail "Tabela items pertence a '$dono' (a API recebera 'permission denied'; tipico apos restore com --no-owner)"; fi
-    secao "Backup"
-    if crontab -u postgres -l 2>/dev/null | grep -q 'infralab-backup'; then pass "Cron do postgres tem o backup agendado"; else fail "Backup nao agendado no cron do postgres"; fi
-    local ult; ult=$(ls -1t "$BKP_DB_DIR"/*.dump 2>/dev/null | head -1)
-    if [ -n "$ult" ]; then
-      pass "Ultimo backup: $(basename "$ult")"
-      if [ -n "$(find "$ult" -mmin -1560)" ]; then pass "Backup com menos de 26h"; else warn "Ultimo backup tem mais de 26h"; fi
-      if runuser -u postgres -- pg_restore --list "$ult" >/dev/null 2>&1; then pass "Backup legivel (pg_restore --list)"; else fail "Backup corrompido"; fi
-    else fail "Nenhum .dump em $BKP_DB_DIR (rode: sudo bash backups/backup.sh)"; fi
-    info "Copia do backup para o Samba: nao implementada no backup.sh (pendencia Luiz + Rafael)."
+    if [ -n "$hba" ]; then
+      if grep -vE '^\s*#' "$hba" | grep -qwi 'trust'; then fail "pg_hba.conf contem metodo 'trust'"; else pass "pg_hba.conf sem metodo 'trust'"; fi
+      if grep -vE '^\s*#' "$hba" | grep -q '0\.0\.0\.0/0'; then fail "pg_hba.conf libera 0.0.0.0/0"; else pass "pg_hba.conf sem 0.0.0.0/0"; fi
+    else fail "Nao foi possivel localizar o pg_hba.conf"; fi
+    [ "$(psql_pg "show password_encryption")" = scram-sha-256 ] && pass "Senhas com scram-sha-256" || warn "password_encryption diferente de scram-sha-256"
+    [ "$(psql_pg "select rolsuper from pg_roles where rolname='infralab_user'")" = f ] && pass "infralab_user nao e superusuario" || fail "infralab_user e superusuario ou nao existe"
+    secao "Backups"
+    if [ -d "$BKP_DB_DIR" ]; then
+      if [ -z "$(find "$BKP_DB_DIR" -type f -perm /o+r 2>/dev/null)" ]; then pass "Backups nao legiveis por 'outros'"; else fail "Ha backups legiveis por 'outros' em $BKP_DB_DIR"; fi
+      case "$(stat -c '%a' "$BKP_DB_DIR")" in 700|750) pass "Diretorio de backup com modo $(stat -c '%a' "$BKP_DB_DIR")";; *) warn "Diretorio de backup com modo $(stat -c '%a' "$BKP_DB_DIR")";; esac
+    else warn "$BKP_DB_DIR nao existe"; fi
+    info "Alem do disco local, o backup.sh envia uma copia ao Samba (//$FILES/dados); veja teste-servicos.sh banco."
     ;;
 
   samba)
     precisa_root
-    secao "Servico Samba"
-    servico_ativo smbd "Samba (smbd)"
-    servico_habilitado smbd
-    escuta 445 | grep -q . && pass "Porta 445 em escuta" || fail "Porta 445 sem servico"
-    escuta 139 | grep -q . && pass "Porta 139 em escuta" || fail "Porta 139 sem servico"
-    secao "Configuracao"
-    if testparm -s >/dev/null 2>&1; then pass "testparm: smb.conf valido"; else fail "testparm acusou erro"; fi
-    local s; for s in web dados publica backups; do
-      testparm -s 2>/dev/null | grep -q "^\[$s\]" && pass "Share [$s] definido" || fail "Share [$s] ausente"
-    done
-    secao "Diretorios (dono do grupo e modo)"
-    local par d g
-    for par in /srv/samba/web:gpr_web /srv/samba/dados:gpr_dados /srv/samba/publica:gpr_todos /srv/backups:gpr_admin; do
-      d=${par%%:*}; g=${par##*:}
-      if [ -d "$d" ]; then
-        [ "$(stat -c '%G' "$d")" = "$g" ] && pass "$d pertence ao grupo $g" || fail "$d com grupo $(stat -c '%G' "$d") (esperado $g)"
+    ssh_basico
+    secao "Configuracao do Samba"
+    local cfg; cfg=$(testparm -sv 2>/dev/null)
+    if [ -z "$cfg" ]; then fail "testparm nao retornou configuracao"; else
+      grep -qiE 'guest ok = yes' <<<"$cfg" && fail "Existe share com guest ok = yes" || pass "Nenhum share permite convidado"
+      grep -qiE 'map to guest = never' <<<"$cfg" && pass "map to guest = Never" || warn "map to guest diferente de Never"
+      local mp; mp=$(awk -F= '/server min protocol/ {gsub(/ /,"",$2); print $2; exit}' <<<"$cfg")
+      case "$mp" in SMB2*|SMB3*) pass "Protocolo minimo $mp (SMB1 desativado)";; *) fail "server min protocol = ${mp:-?} (SMB1 habilitado)";; esac
+      grep -qiE 'null passwords = yes' <<<"$cfg" && fail "Senhas vazias permitidas" || pass "Senhas vazias nao permitidas"
+      if awk -F= '/^[[:space:]]*hosts allow/ {gsub(/[[:space:]]/,"",$2); if ($2!="") f=1} END{exit !f}' <<<"$cfg"; then pass "hosts allow definido"
+      else warn "Sem 'hosts allow': recomendado 192.168.20.0/24 e $DB"; fi
+    fi
+    secao "Permissoes dos diretorios"
+    local d m
+    for d in /srv/samba/web /srv/samba/dados /srv/samba/publica /srv/backups; do
+      if [ -d "$d" ]; then m=$(stat -c '%a' "$d")
+        case "$m" in *0) pass "$d modo $m (sem acesso para 'outros')";; *) fail "$d modo $m (acessivel por 'outros')";; esac
       else fail "$d nao existe"; fi
     done
-    secao "Usuarios"
-    local u; for u in usr_web usr_dados; do id "$u" >/dev/null 2>&1 && pass "Usuario $u existe" || fail "Usuario $u ausente"; done
-    if id usr_admin >/dev/null 2>&1 && id usr_adim >/dev/null 2>&1; then warn "Existem usr_admin E usr_adim (erro de digitacao nos scripts do Rafael)"
-    elif id usr_admin >/dev/null 2>&1 || id usr_adim >/dev/null 2>&1; then pass "Usuario admin existe"; else fail "Usuario admin ausente"; fi
-    local n; n=$(pdbedit -L 2>/dev/null | wc -l)
-    if [ "$n" -gt 0 ]; then pass "$n usuario(s) cadastrado(s) no Samba (smbpasswd -a)"; else fail "Nenhum usuario no Samba: ninguem consegue autenticar (smbpasswd -a)"; fi
-    secao "Backup"
-    local cr; cr=$(crontab -l 2>/dev/null | grep -c 'backup-samba')
-    case "$cr" in 1) pass "Backup agendado uma vez no cron do root";; 0) fail "Backup nao agendado no cron do root";; *) warn "Backup agendado $cr vezes no cron (linha duplicada)";; esac
-    [ -x /usr/local/bin/backup-samba.sh ] && pass "/usr/local/bin/backup-samba.sh instalado" || fail "/usr/local/bin/backup-samba.sh ausente"
-    local ub; ub=$(ls -1t "$BKP_SMB_DIR"/samba_*.tar.gz 2>/dev/null | head -1)
-    [ -n "$ub" ] && pass "Ultimo backup: $(basename "$ub")" || fail "Nenhum samba_*.tar.gz em $BKP_SMB_DIR"
+    secao "Teste de isolamento entre grupos (manual)"
+    info "Com usr_web: smbclient //$FILES/dados -U usr_web  -> esperado NT_STATUS_ACCESS_DENIED"
+    info "Com usr_dados: smbclient //$FILES/backups -U usr_dados -> esperado NT_STATUS_ACCESS_DENIED"
     ;;
 
   roteador)
     precisa_root
-    secao "Servicos do roteador"
-    servico_ativo nftables "nftables"
-    servico_habilitado nftables
-    servico_ativo dnsmasq "dnsmasq (DNS/DHCP)"
-    servico_habilitado dnsmasq
-    [ "$(sysctl -n net.ipv4.ip_forward 2>/dev/null)" = 1 ] && pass "net.ipv4.ip_forward = 1" || fail "Encaminhamento de pacotes desligado"
-    [ -f /etc/nftables.conf ] && pass "/etc/nftables.conf presente (regras persistem no boot)" || fail "/etc/nftables.conf ausente"
-    [ "$(nft list ruleset 2>/dev/null | grep -c 'policy drop')" -ge 2 ] && pass "Politica drop em input e forward" || fail "Politica drop ausente"
-    nft list ruleset 2>/dev/null | grep -q masquerade && pass "NAT (masquerade) ativo" || fail "NAT ausente"
+    ssh_basico
+    secao "Politica do firewall"
+    nft list chain inet filter input   2>/dev/null | grep -q 'policy drop' && pass "Chain input com policy drop"   || fail "Chain input sem policy drop"
+    nft list chain inet filter forward 2>/dev/null | grep -q 'policy drop' && pass "Chain forward com policy drop" || fail "Chain forward sem policy drop"
+    nft list chain inet filter forward 2>/dev/null | grep -q 'ct state invalid drop' && pass "Pacotes invalidos descartados" || warn "Sem descarte de ct state invalid"
+    nft list chain inet filter forward 2>/dev/null | grep -q 'log prefix' && pass "Descartes registrados em log" || warn "Sem log de descartes"
+    secao "Regras que precisam de decisao ou remocao"
+    local fw; fw=$(nft list chain inet filter forward 2>/dev/null)
+    if grep -qE "oifname \"$WAN_IF\" tcp dport \{ 80, 443 \}" <<<"$fw"; then
+      if [ "$MODO" = final ]; then fail "Regra TEMPORARIA ativa: DMZ/DB acessam a internet (remover do nftables.conf E do setup-router.sh)"
+      else warn "Regra temporaria de internet ativa (aceitavel no modo dev; remover antes da entrega)"; fi
+    else pass "Regra temporaria de internet removida (DMZ e DB isoladas)"; fi
+    grep -qE "iifname \"$LAN_IF\" oifname \"$WAN_IF\" accept" <<<"$fw" && warn "LAN sai para a internet em QUALQUER porta (README diz so 80/443)" || pass "Saida da LAN restrita"
+    nft list chain inet filter input 2>/dev/null | grep -qE "iifname \"$WAN_IF\" tcp dport 22 accept" && warn "SSH do roteador aberto na interface WAN" || pass "SSH nao aberto na WAN"
     ;;
 
   *)
