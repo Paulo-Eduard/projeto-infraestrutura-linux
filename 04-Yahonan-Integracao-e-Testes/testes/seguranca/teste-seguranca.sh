@@ -199,7 +199,7 @@ principal() {
       if [ -z "$(find "$BKP_DB_DIR" -type f -perm /o+r 2>/dev/null)" ]; then pass "Backups nao legiveis por 'outros'"; else fail "Ha backups legiveis por 'outros' em $BKP_DB_DIR"; fi
       case "$(stat -c '%a' "$BKP_DB_DIR")" in 700|750) pass "Diretorio de backup com modo $(stat -c '%a' "$BKP_DB_DIR")";; *) warn "Diretorio de backup com modo $(stat -c '%a' "$BKP_DB_DIR")";; esac
     else warn "$BKP_DB_DIR nao existe"; fi
-    info "Backups ficam so nesta VM (sem copia externa): risco registrado em validacao.md."
+    info "Alem do disco local, o backup.sh envia uma copia ao Samba (//$FILES/dados); veja teste-servicos.sh banco."
     ;;
 
   samba)
